@@ -260,7 +260,23 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
               <option value="Batch">Batch</option>
             </select>
           </div>
-          <div class="field"><label>Stops</label><input type="number" id="l-stops" placeholder="0" min="0" oninput="saveDraft()"></div>
+          <div class="field"><label>Stops</label><input type="number" id="l-stops" placeholder="0" min="0" oninput="updateMiles();saveDraft()"></div>
+        </div>
+
+        <div class="log-section">Miles</div>
+        <div class="field-row three">
+          <div class="field">
+            <label>Spark Estimated Miles</label>
+            <input type="number" id="l-est-miles" placeholder="0.0" step="0.1" min="0" oninput="updateMiles();saveDraft()">
+          </div>
+          <div class="field">
+            <label>Total Miles (w/ return)</label>
+            <input type="number" id="l-total-miles" placeholder="auto" step="0.1" style="background:var(--accent-light);border-color:var(--accent-dim);color:var(--accent);" readonly>
+          </div>
+          <div class="field">
+            <label>Multiplier Applied</label>
+            <input type="text" id="l-miles-note" placeholder="—" readonly style="color:var(--muted);font-size:10px;">
+          </div>
         </div>
 
         <div class="log-section">Batch Times <span style="color:var(--dim);font-size:9px;text-transform:none;letter-spacing:0"> — for hourly rate & idle tracking</span></div>
@@ -272,6 +288,35 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
           <div class="field"><label>Confirmed $</label><input type="number" id="l-earn" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
           <div class="field"><label>Tips $</label><input type="number" id="l-tips" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
           <div class="field"><label>Incentive $</label><input type="number" id="l-incent" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
+        </div>
+
+        <!-- Trip Modified toggle -->
+        <div id="modified-section" style="margin-top:10px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:7px;cursor:pointer;" onclick="toggleModified()">
+            <div id="mod-toggle" style="width:32px;height:18px;border-radius:99px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0;">
+              <div id="mod-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+            </div>
+            <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;">Trip was modified by Spark after acceptance</span>
+          </div>
+          <div id="modified-fields" style="display:none;margin-top:8px;">
+            <div style="background:#fdf4ee;border:1px solid var(--accent-dim);border-radius:7px;padding:12px 14px;">
+              <div style="font-size:9px;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;font-weight:600;margin-bottom:8px;">Modification Details</div>
+              <div class="field-row three">
+                <div class="field">
+                  <label>Original Estimate $</label>
+                  <input type="number" id="l-orig-earn" placeholder="0.00" step="0.01" oninput="updateModDiff();saveDraft()">
+                </div>
+                <div class="field">
+                  <label>Original Stops</label>
+                  <input type="number" id="l-orig-stops" placeholder="0" min="0" oninput="updateModDiff();saveDraft()">
+                </div>
+                <div class="field">
+                  <label>Income Lost</label>
+                  <input type="number" id="l-mod-diff" placeholder="—" readonly style="color:#b83232;background:#fdeaea;border-color:#f0c0c0;">
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="rate-preview" id="rate-preview">
@@ -367,6 +412,8 @@ function handleData(data) {
     earnings: +r.earnings||0, tips: +r.tips||0, incentive: +r.incentive||0,
     total: +r.total||0, activeMins: +r.activeMins||0, idleMins: +r.idleMins||0,
     rate: +r.rate||0,
+    estMiles: +r.estMiles||0, totalMiles: +r.totalMiles||0,
+    modified: +r.modified||0, origEarn: +r.origEarn||0, origStops: +r.origStops||0, lostEarn: +r.lostEarn||0,
   })).filter(r => r._date && !isNaN(r._date));
 
   allDaily.sort((a,b)=>a._date-b._date);
@@ -520,7 +567,8 @@ function renderRunsTable() {
       <thead><tr>
         <th>Date</th><th>Day</th><th>Type</th><th class="r">Stops</th>
         <th>Start</th><th>Back</th><th class="r">Active</th><th class="r">Idle</th>
-        <th class="r">Earnings</th><th class="r">Tips</th><th class="r">Total</th><th class="r">$/Hr</th>
+        <th class="r">Est Mi</th><th class="r">Tot Mi</th>
+        <th class="r">Earnings</th><th class="r">Tips</th><th class="r">Total</th><th class="r">$/Hr</th><th class="r">Mod?</th>
       </tr></thead>
       <tbody>
         ${sorted.map(r=>`
@@ -533,10 +581,13 @@ function renderRunsTable() {
             <td class="mu">${r.back||'—'}</td>
             <td class="r">${r.activeMins>0?fmtMins(r.activeMins):'—'}</td>
             <td class="r" style="color:var(--purple)">${r.idleMins>0?fmtMins(r.idleMins):'—'}</td>
+            <td class="r mu">${r.estMiles>0?r.estMiles+'mi':'—'}</td>
+            <td class="r mu">${r.totalMiles>0?r.totalMiles+'mi':'—'}</td>
             <td class="r">${fmt$(r.earnings)}</td>
             <td class="r mu">${r.tips>0?fmt$(r.tips):'—'}</td>
             <td class="r" style="font-weight:600">${fmt$(r.total)}</td>
             <td class="r" style="color:var(--green)">${r.rate>0?fmt$(r.rate):r.activeMins>0?fmt$(r.total/(r.activeMins/60)):'—'}</td>
+            <td class="r">${r.modified==1?`<span style="color:#b83232;font-size:9px;font-weight:700;">-$${r.lostEarn||'?'}</span>`:'—'}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
@@ -662,6 +713,13 @@ async function submitRun() {
   // Prefix times with apostrophe to force plain text in Sheets
   const forceText = t => t ? "'" + t : '';
 
+  const estMiles   = parseFloat(document.getElementById('l-est-miles').value)||0;
+  const totalMiles = parseFloat(document.getElementById('l-total-miles').value)||0;
+  const modified   = isModified ? 1 : 0;
+  const origEarn   = isModified ? (parseFloat(document.getElementById('l-orig-earn').value)||0) : 0;
+  const origStops  = isModified ? (parseInt(document.getElementById('l-orig-stops').value)||0) : 0;
+  const lostEarn   = isModified && origEarn > 0 ? Math.max(0, origEarn - total) : 0;
+
   const payload = {
     date,
     type:   document.getElementById('l-type').value,
@@ -672,6 +730,8 @@ async function submitRun() {
     back:   forceText(lastBatch.back||''),
     activeMins: active, idleMins: idle,
     earnings: earn, tips, incentive: incent, total, rate,
+    estMiles, totalMiles,
+    modified, origEarn, origStops, lostEarn,
   };
 
   const btn = document.getElementById('submit-btn');
@@ -706,9 +766,14 @@ function setStatus(msg, cls) {
 }
 
 function resetForm() {
-  ['l-earn','l-tips','l-incent','l-stops'].forEach(id=>{
+  ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-orig-earn','l-orig-stops','l-mod-diff'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
+  // Reset modified toggle
+  isModified = false;
+  document.getElementById('mod-toggle').style.background = 'var(--border)';
+  document.getElementById('mod-thumb').style.left = '2px';
+  document.getElementById('modified-fields').style.display = 'none';
   // Use local date not UTC to avoid timezone off-by-one
 const _now = new Date();
 const _localDate = _now.getFullYear() + '-' +
@@ -737,6 +802,47 @@ function setFilter(k, btn) {
 }
 
 // ── Draft save ───────────────────────────────────────
+// ── Miles calculator ─────────────────────────────────
+function updateMiles() {
+  const est   = parseFloat(document.getElementById('l-est-miles').value) || 0;
+  const stops = parseInt(document.getElementById('l-stops').value) || 0;
+  const noteEl  = document.getElementById('l-miles-note');
+  const totalEl = document.getElementById('l-total-miles');
+  if (!est) { totalEl.value = ''; noteEl.value = '—'; return; }
+
+  let mult, label;
+  if (stops <= 1)      { mult = 2.0;  label = '×2.0  (1 stop — full return)'; }
+  else if (stops <= 4) { mult = 1.8;  label = '×1.8  (2–4 stops)'; }
+  else                 { mult = 1.6;  label = '×1.6  (5+ stops)'; }
+
+  const total = Math.round(est * mult * 10) / 10;
+  totalEl.value = total;
+  noteEl.value  = label;
+}
+
+// ── Trip Modified toggle ──────────────────────────────
+let isModified = false;
+function toggleModified() {
+  isModified = !isModified;
+  document.getElementById('mod-toggle').style.background = isModified ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('mod-thumb').style.left = isModified ? '16px' : '2px';
+  document.getElementById('modified-fields').style.display = isModified ? 'block' : 'none';
+  saveDraft();
+}
+
+function updateModDiff() {
+  const orig  = parseFloat(document.getElementById('l-orig-earn').value) || 0;
+  const earn  = parseFloat(document.getElementById('l-earn').value) || 0;
+  const tips  = parseFloat(document.getElementById('l-tips').value) || 0;
+  const incent= parseFloat(document.getElementById('l-incent').value) || 0;
+  const final = earn + tips + incent;
+  const diff  = orig > 0 && final > 0 ? Math.round((orig - final) * 100) / 100 : null;
+  const el    = document.getElementById('l-mod-diff');
+  if (diff !== null && diff > 0) { el.value = diff.toFixed(2); }
+  else { el.value = ''; }
+  saveDraft();
+}
+
 function saveDraft() {
   try {
     const batches = [];
@@ -756,6 +862,10 @@ function saveDraft() {
       earn:     document.getElementById('l-earn').value,
       tips:     document.getElementById('l-tips').value,
       incent:   document.getElementById('l-incent').value,
+      estMiles: document.getElementById('l-est-miles').value,
+      modified: isModified,
+      origEarn: document.getElementById('l-orig-earn')?.value||'',
+      origStops:document.getElementById('l-orig-stops')?.value||'',
       batches,  batchCount,
     }));
   } catch(e) {}
@@ -774,6 +884,13 @@ function restoreDraft() {
     if (d.earn)   document.getElementById('l-earn').value   = d.earn;
     if (d.tips)   document.getElementById('l-tips').value   = d.tips;
     if (d.incent) document.getElementById('l-incent').value = d.incent;
+    if (d.estMiles) { document.getElementById('l-est-miles').value = d.estMiles; updateMiles(); }
+    if (d.modified) {
+      isModified = false; toggleModified(); // toggles to true and shows fields
+      if (d.origEarn)  document.getElementById('l-orig-earn').value  = d.origEarn;
+      if (d.origStops) document.getElementById('l-orig-stops').value = d.origStops;
+      updateModDiff();
+    }
     if (d.batches?.length) {
       document.getElementById('batches-container').innerHTML = '';
       batchCount = 0;
