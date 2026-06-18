@@ -134,6 +134,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
 .pill.shop   { background: var(--blue-light); color: var(--blue); }
 .pill.pickup { background: var(--green-light); color: var(--green); }
 .pill.batch  { background: var(--purple-light); color: var(--purple); }
+.pill.canceled { background: var(--border); color: var(--muted); }
 .pill.instacart { background: var(--accent-light); color: var(--accent); }
 .pill.spark  { background: var(--border); color: var(--muted); }
 
@@ -266,6 +267,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
               <option value="Shop">Shop</option>
               <option value="Pickup">Pickup</option>
               <option value="Batch">Batch</option>
+              <option value="Canceled">Canceled</option>
             </select>
           </div>
           <div class="field"><label>Stops</label><input type="number" id="l-stops" placeholder="0" min="0" oninput="updateMiles();saveDraft()"></div>
@@ -389,6 +391,7 @@ function pillClass(type) {
   const t = type.toLowerCase();
   if (t.includes('pickup')) return 'pickup';
   if (t.includes('batch')) return 'batch';
+  if (t.includes('cancel')) return 'canceled';
   return 'shop';
 }
 
