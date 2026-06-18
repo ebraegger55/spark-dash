@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spark — Earnings Dashboard</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #f5f2ee;
+  --surface: #ffffff;
+  --card: #faf8f5;
+  --border: #e8e2da;
+  --border-strong: #cec5b8;
+  --accent: #c4581a;
+  --accent-light: #fdf1ea;
+  --accent-dim: #edb898;
+  --green: #2a6b40;
+  --green-light: #e8f2ec;
+  --blue: #1e4d8c;
+  --blue-light: #e8eef8;
+  --purple: #6b3fa0;
+  --purple-light: #f0eaf8;
+  --text: #1a1510;
+  --muted: #7a6e62;
+  --dim: #b8afa4;
+  --shadow: 0 1px 4px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; font-size: 13px; min-height: 100vh; }
+
+/* Header */
+.header { background: var(--text); padding: 22px 28px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.header-title { font-size: 22px; font-weight: 800; color: #f5f2ee; letter-spacing: -.3px; }
+.header-title span { color: var(--accent-dim); }
+.header-sub { font-size: 10px; color: rgba(255,255,255,.35); letter-spacing: 1.2px; text-transform: uppercase; margin-top: 3px; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.refresh-btn { background: none; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.55); padding: 6px 14px; border-radius: 6px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 600; cursor: pointer; letter-spacing: .5px; transition: all .15s; }
+.refresh-btn:hover { border-color: var(--accent-dim); color: var(--accent-dim); }
+.last-upd { font-size: 9px; color: rgba(255,255,255,.3); letter-spacing: .5px; }
+
+/* Nav tabs */
+.nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 28px; display: flex; gap: 0; }
+.nav-tab { padding: 13px 18px; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s; letter-spacing: .3px; white-space: nowrap; }
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Filter bar */
+.filter-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 28px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.filter-label { font-size: 8px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); margin-right: 4px; }
+.filt { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.filt:hover { border-color: var(--accent); color: var(--accent); }
+.filt.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+/* Main */
+.main { padding: 20px 28px 60px; max-width: 1100px; margin: 0 auto; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+.hcard { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+.hcard::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+.hcard.or::before { background: var(--accent); }
+.hcard.gr::before { background: var(--green); }
+.hcard.bl::before { background: var(--blue); }
+.hcard.pu::before { background: var(--purple); }
+.hcard-label { font-size: 8px; text-transform: uppercase; letter-spacing: 1.3px; color: var(--muted); margin-bottom: 7px; }
+.hcard-val { font-size: 24px; font-weight: 700; letter-spacing: -.5px; line-height: 1; }
+.hcard.or .hcard-val { color: var(--accent); }
+.hcard.gr .hcard-val { color: var(--green); }
+.hcard.bl .hcard-val { color: var(--blue); }
+.hcard.pu .hcard-val { color: var(--purple); }
+.hcard-sub { font-size: 9px; color: var(--dim); margin-top: 4px; font-family: 'DM Mono', monospace; }
+
+/* Grid layouts */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.g3 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; box-shadow: var(--shadow); }
+.card-title { font-size: 8px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin-bottom: 14px; font-weight: 600; }
+
+/* Month strip */
+.month-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; scrollbar-width: none; }
+.month-strip::-webkit-scrollbar { display: none; }
+.mcard { flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px; min-width: 100px; box-shadow: var(--shadow); }
+.mcard.cur { border-color: var(--accent); background: var(--accent-light); }
+.mcard-name { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 4px; }
+.mcard-val { font-size: 15px; font-weight: 700; color: var(--accent); }
+.mcard.cur .mcard-val { color: var(--accent); }
+.mcard-sub { font-size: 9px; color: var(--dim); margin-top: 2px; font-family: 'DM Mono', monospace; }
+
+/* Bar chart */
+.bar-chart { display: flex; flex-direction: column; gap: 6px; }
+.bar-row { display: flex; align-items: center; gap: 10px; }
+.bar-lbl { font-size: 9px; color: var(--muted); width: 64px; flex-shrink: 0; text-align: right; }
+.bar-track { flex: 1; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 99px; transition: width .5s ease; }
+.bar-fill.or { background: var(--accent); }
+.bar-fill.gr { background: var(--green); }
+.bar-val { font-size: 10px; color: var(--text); width: 58px; text-align: right; flex-shrink: 0; font-family: 'DM Mono', monospace; }
+
+/* Best days */
+.best-list { display: flex; flex-direction: column; gap: 6px; }
+.best-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--card); border-radius: 7px; border: 1px solid var(--border); }
+.best-date { font-size: 12px; font-weight: 600; }
+.best-dow { font-size: 9px; color: var(--muted); margin-top: 1px; }
+.best-amt { font-size: 15px; font-weight: 700; color: var(--accent); text-align: right; }
+.best-rate { font-size: 9px; color: var(--green); text-align: right; margin-top: 2px; font-family: 'DM Mono', monospace; }
+
+/* Stat rows */
+.srow { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.srow:last-child { border-bottom: none; }
+.srow-lbl { color: var(--muted); }
+.srow-val { font-weight: 600; font-family: 'DM Mono', monospace; }
+.srow-val.or { color: var(--accent); }
+.srow-val.gr { color: var(--green); }
+.srow-val.pu { color: var(--purple); }
+
+/* Table */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); text-align: left; padding: 0 8px 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.tbl th.r { text-align: right; }
+.tbl td { padding: 6px 8px; font-size: 11px; color: var(--text); border-bottom: 1px solid var(--border); white-space: nowrap; font-family: 'DM Mono', monospace; }
+.tbl td.r { text-align: right; }
+.tbl td.lbl { font-family: 'Syne', sans-serif; font-size: 11px; }
+.tbl td.mu { color: var(--muted); }
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:hover td { background: var(--card); }
+
+/* Pills */
+.pill { display: inline-block; font-size: 8px; padding: 2px 7px; border-radius: 4px; font-weight: 600; letter-spacing: .3px; font-family: 'Syne', sans-serif; }
+.pill.shop   { background: var(--blue-light); color: var(--blue); }
+.pill.pickup { background: var(--green-light); color: var(--green); }
+.pill.batch  { background: var(--purple-light); color: var(--purple); }
+.pill.instacart { background: var(--accent-light); color: var(--accent); }
+.pill.spark  { background: var(--border); color: var(--muted); }
+
+/* ── LOG FORM ── */
+.log-page { max-width: 680px; }
+.log-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: var(--shadow); margin-bottom: 16px; }
+.log-section { font-size: 8px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin: 16px 0 10px; font-weight: 600; }
+.log-section:first-child { margin-top: 0; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.field-row.three { grid-template-columns: 1fr 1fr 1fr; }
+.field-row.four  { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.field-row.solo  { grid-template-columns: 1fr; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field label { font-size: 8px; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); font-weight: 600; }
+.field input, .field select {
+  background: var(--card); border: 1px solid var(--border); border-radius: 7px;
+  padding: 8px 10px; color: var(--text); font-family: 'DM Mono', monospace;
+  font-size: 12px; outline: none; transition: border-color .15s; width: 100%;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); background: var(--accent-light); }
+
+/* Batch block */
+.batch-block { background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px; margin-bottom: 8px; }
+.batch-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.batch-hdr-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.batch-del { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 14px; line-height: 1; }
+.batch-del:hover { color: #b83232; }
+.batch-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+.time-field { display: flex; flex-direction: column; gap: 2px; }
+.time-field label { font-size: 7px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); line-height: 1.3; }
+.time-field input {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+  padding: 6px 4px; color: var(--text); font-family: 'DM Mono', monospace;
+  font-size: 11px; outline: none; width: 100%; text-align: center;
+}
+.time-field input:focus { border-color: var(--accent); background: var(--accent-light); }
+.idle-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 10px; background: var(--purple-light); border-radius: 5px; border: 1px solid #ddd4f0; }
+.idle-lbl { font-size: 9px; color: var(--purple); font-weight: 600; flex: 1; }
+.idle-val { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--purple); }
+.add-batch-btn { background: none; border: 1px dashed var(--border); border-radius: 7px; padding: 7px; width: 100%; color: var(--muted); font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.add-batch-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Rate preview */
+.rate-preview { background: var(--green-light); border: 1px solid #b8ddc8; border-radius: 7px; padding: 9px 14px; display: none; justify-content: space-between; align-items: center; margin-top: 10px; }
+.rate-preview.show { display: flex; }
+.rate-preview-label { font-size: 10px; color: var(--green); font-weight: 600; }
+.rate-preview-val { font-family: 'DM Mono', monospace; font-size: 15px; color: var(--green); font-weight: 500; }
+
+/* Submit */
+.submit-row { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
+.submit-btn { flex: 1; background: var(--text); color: var(--bg); border: none; border-radius: 9px; padding: 13px; font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: .3px; transition: background .15s; }
+.submit-btn:hover { background: var(--accent); }
+.submit-btn:disabled { background: var(--dim); cursor: not-allowed; }
+.submit-status { font-size: 11px; color: var(--muted); }
+.submit-status.ok { color: var(--green); font-weight: 600; }
+.submit-status.err { color: #b83232; }
+
+/* Loading/Error */
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh; gap: 14px; }
+.spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-txt { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+.error-box { background: #fdeaea; border: 1px solid #f0c0c0; border-radius: 9px; padding: 18px 22px; color: #8b2020; font-size: 12px; margin: 16px 0; line-height: 1.6; }
+
+@media(max-width:680px) {
+  .header { padding: 16px 18px; }
+  .nav { padding: 0 18px; overflow-x: auto; }
+  .filter-bar, .main { padding-left: 18px; padding-right: 18px; }
+  .hero { grid-template-columns: repeat(2,1fr); }
+  .g2, .g3 { grid-template-columns: 1fr; }
+  .field-row.four { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">🚗 <span>Spark</span> Dashboard</div>
+    <div class="header-sub">Live from Google Sheets</div>
+  </div>
+  <div class="header-right">
+    <span class="last-upd" id="last-upd"></span>
+    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Nav -->
+<div class="nav">
+  <div class="nav-tab" onclick="showPage('dashboard',this)">Dashboard</div>
+  <div class="nav-tab active" onclick="showPage('log',this)">+ Log Run</div>
+  <div class="nav-tab" onclick="showPage('runs',this)">All Runs</div>
+</div>
+
+<!-- Filter bar (dashboard only) -->
+<div class="filter-bar" id="filter-bar">
+  <span class="filter-label">Period:</span>
+  <button class="filt active" onclick="setFilter('month',this)" id="filt-month">This Month</button>
+  <button class="filt" onclick="setFilter('30',this)">30 Days</button>
+  <button class="filt" onclick="setFilter('90',this)">90 Days</button>
+  <button class="filt" onclick="setFilter('2026',this)">2026</button>
+  <button class="filt" onclick="setFilter('2025',this)">2025</button>
+  <button class="filt" onclick="setFilter('all',this)">All Time</button>
+</div>
+
+<div class="main">
+
+  <!-- Dashboard page -->
+  <div class="page" id="page-dashboard">
+    <div id="dashboard-content">
+      <div class="loading"><div class="spinner"></div><div class="loading-txt">Loading from Google Sheets...</div></div>
+    </div>
+  </div>
+
+  <!-- Log Run page -->
+  <div class="page active" id="page-log">
+    <div class="log-page">
+      <div class="log-card">
+        <div class="log-section">Session Info</div>
+        <div class="field-row four">
+          <div class="field"><label>Date</label><input type="date" id="l-date" oninput="saveDraft()"></div>
+          <div class="field"><label>Platform</label>
+            <select id="l-platform" onchange="saveDraft()">
+              <option value="Spark">Spark</option>
+              <option value="Instacart">Instacart</option>
+            </select>
+          </div>
+          <div class="field"><label>Type</label>
+            <select id="l-type">
+              <option value="Shop">Shop</option>
+              <option value="Pickup">Pickup</option>
+              <option value="Batch">Batch</option>
+            </select>
+          </div>
+          <div class="field"><label>Stops</label><input type="number" id="l-stops" placeholder="0" min="0" oninput="updateMiles();saveDraft()"></div>
+        </div>
+
+        <div class="log-section">Miles</div>
+        <div class="field-row three">
+          <div class="field">
+            <label>Spark Estimated Miles</label>
+            <input type="number" id="l-est-miles" placeholder="0.0" step="0.1" min="0" oninput="updateMiles();saveDraft()">
+          </div>
+          <div class="field">
+            <label>Total Miles (w/ return)</label>
+            <input type="number" id="l-total-miles" placeholder="auto" step="0.1" style="background:var(--accent-light);border-color:var(--accent-dim);color:var(--accent);" readonly>
+          </div>
+          <div class="field">
+            <label>Multiplier Applied</label>
+            <input type="text" id="l-miles-note" placeholder="—" readonly style="color:var(--muted);font-size:10px;">
+          </div>
+        </div>
+
+        <div class="log-section">Batch Times <span style="color:var(--dim);font-size:9px;text-transform:none;letter-spacing:0"> — for hourly rate & idle tracking</span></div>
+        <div id="batches-container"></div>
+        <button type="button" class="add-batch-btn" onclick="addBatch()">+ Add Batch</button>
+
+        <div class="log-section">Earnings</div>
+        <div class="field-row three">
+          <div class="field"><label>Confirmed $</label><input type="number" id="l-earn" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
+          <div class="field"><label>Tips $</label><input type="number" id="l-tips" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
+          <div class="field"><label>Incentive $</label><input type="number" id="l-incent" placeholder="0.00" step="0.01" oninput="updatePreview();saveDraft()"></div>
+        </div>
+
+        <!-- Trip Modified toggle -->
+        <div id="modified-section" style="margin-top:10px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:7px;cursor:pointer;" onclick="toggleModified()">
+            <div id="mod-toggle" style="width:32px;height:18px;border-radius:99px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0;">
+              <div id="mod-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+            </div>
+            <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;">Trip was modified by Spark after acceptance</span>
+          </div>
+          <div id="modified-fields" style="display:none;margin-top:8px;">
+            <div style="background:#fdf4ee;border:1px solid var(--accent-dim);border-radius:7px;padding:12px 14px;">
+              <div style="font-size:9px;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;font-weight:600;margin-bottom:8px;">Modification Details</div>
+              <div class="field-row three">
+                <div class="field">
+                  <label>Original Estimate $</label>
+                  <input type="number" id="l-orig-earn" placeholder="0.00" step="0.01" oninput="updateModDiff();saveDraft()">
+                </div>
+                <div class="field">
+                  <label>Original Stops</label>
+                  <input type="number" id="l-orig-stops" placeholder="0" min="0" oninput="updateModDiff();saveDraft()">
+                </div>
+                <div class="field">
+                  <label>Income Lost</label>
+                  <input type="number" id="l-mod-diff" placeholder="—" readonly style="color:#b83232;background:#fdeaea;border-color:#f0c0c0;">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rate-preview" id="rate-preview">
+          <span class="rate-preview-label">Projected Hourly Rate</span>
+          <span class="rate-preview-val" id="rate-val">—</span>
+        </div>
+
+        <div class="submit-row">
+          <button class="submit-btn" id="submit-btn" onclick="submitRun()">Log Run to Google Sheets</button>
+          <span class="submit-status" id="submit-status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- All Runs page -->
+  <div class="page" id="page-runs">
+    <div class="card">
+      <div class="card-title">All Runs</div>
+      <div id="runs-content"><div class="loading"><div class="spinner"></div><div class="loading-txt">Loading...</div></div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbzJjxHsyAWbwP0vRN3nE5gU4W94fLkclpAPUIMtQ5hn1xHDzNhkchY-MwZjbtTI1t_P/exec";
+
+let allDaily = [], allRuns = [], activeFilter = 'month', batchCount = 0;
+
+// ── Helpers ──────────────────────────────────────────
+function parseDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') return new Date((v - 25569) * 86400000);
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+function fmtShort(d) { return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—'; }
+function fmtDow(d)   { return d ? d.toLocaleDateString('en-US',{weekday:'long'}) : ''; }
+function fmtDowS(d)  { return d ? d.toLocaleDateString('en-US',{weekday:'short'}) : ''; }
+function fmt$(n)     { return n || n===0 ? '$'+Number(n).toFixed(2) : '—'; }
+function fmtMins(m)  { if (!m) return '—'; const h=Math.floor(m/60),mn=Math.round(m%60); return h>0?`${h}h ${mn}m`:`${mn}m`; }
+function parseTime(s){ if(!s) return null; const[h,m]=s.split(':').map(Number); return h*60+m; }
+
+function pillClass(type) {
+  if (!type) return 'shop';
+  const t = type.toLowerCase();
+  if (t.includes('pickup')) return 'pickup';
+  if (t.includes('batch')) return 'batch';
+  return 'shop';
+}
+
+function getFiltered(arr) {
+  const now = new Date();
+  return arr.filter(d => {
+    if (!d._date) return false;
+    if (activeFilter==='all') return true;
+    if (activeFilter==='month') return d._date.getMonth()===now.getMonth() && d._date.getFullYear()===now.getFullYear();
+    if (activeFilter==='30') return (now-d._date)/864e5<=30;
+    if (activeFilter==='90') return (now-d._date)/864e5<=90;
+    if (activeFilter==='2026') return d._date.getFullYear()===2026;
+    if (activeFilter==='2025') return d._date.getFullYear()===2025;
+    return true;
+  });
+}
+
+// ── Load data ─────────────────────────────────────────
+function loadData() {
+  document.getElementById('last-upd').textContent = 'Loading...';
+  const old = document.getElementById('jsonp-tag');
+  if (old) old.remove();
+  const s = document.createElement('script');
+  s.id = 'jsonp-tag';
+  s.src = API + '?callback=handleData&t=' + Date.now();
+  s.onerror = () => {
+    document.getElementById('dashboard-content').innerHTML = '<div class="error-box"><strong>Could not load data.</strong><br>Check Apps Script is deployed with access set to Anyone.</div>';
+    document.getElementById('last-upd').textContent = 'Error';
+  };
+  document.head.appendChild(s);
+}
+
+function handleData(data) {
+  allDaily = (data.daily||[]).map(d => ({...d,
+    _date: parseDate(d.date),
+    earnings: +d.earnings||0, tips: +d.tips||0, incentive: +d.incentive||0,
+    total: +d.total||0, activeMins: +d.activeMins||0, idleMins: +d.idleMins||0,
+    rate: +d.rate||0, runs: +d.runs||0, stops: +d.stops||0,
+  })).filter(d => d._date && !isNaN(d._date));
+
+  allRuns = (data.runs||[]).map(r => ({...r,
+    _date: parseDate(r.date),
+    platform: r.platform || 'Spark',
+    earnings: +r.earnings||0, tips: +r.tips||0, incentive: +r.incentive||0,
+    total: +r.total||0, activeMins: +r.activeMins||0, idleMins: +r.idleMins||0,
+    rate: +r.rate||0,
+    estMiles: +r.estMiles||0, totalMiles: +r.totalMiles||0,
+    modified: +r.modified||0, origEarn: +r.origEarn||0, origStops: +r.origStops||0, lostEarn: +r.lostEarn||0,
+  })).filter(r => r._date && !isNaN(r._date));
+
+  allDaily.sort((a,b)=>a._date-b._date);
+  allRuns.sort((a,b)=>a._date-b._date);
+
+  const now = new Date();
+  document.getElementById('filt-month').textContent =
+    now.toLocaleDateString('en-US',{month:'short'});
+  document.getElementById('last-upd').textContent =
+    'Updated ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+
+  renderDashboard();
+  renderRunsTable();
+}
+
+// ── Dashboard render ──────────────────────────────────
+function renderDashboard() {
+  const daily = getFiltered(allDaily);
+  const runs  = getFiltered(allRuns);
+
+  if (!daily.length) {
+    document.getElementById('dashboard-content').innerHTML =
+      '<div class="loading"><div class="loading-txt">No data for this period.</div></div>';
+    return;
+  }
+
+  const totalEarned = daily.reduce((s,d)=>s+d.total,0);
+  const totalActive = daily.reduce((s,d)=>s+d.activeMins,0);
+  const totalIdle   = daily.reduce((s,d)=>s+d.idleMins,0);
+  const totalRuns   = daily.reduce((s,d)=>s+d.runs,0);
+  const daysWorked  = daily.filter(d=>d.total>0).length;
+  const avgRate     = totalActive>0 ? totalEarned/(totalActive/60) : 0;
+  const avgPerDay   = daysWorked>0 ? totalEarned/daysWorked : 0;
+  const bestDay     = [...daily].sort((a,b)=>b.total-a.total)[0];
+  const avgIdlePerDay = daysWorked>0 && totalIdle>0 ? Math.round(totalIdle/daysWorked) : 0;
+
+  // Monthly
+  const byMonth = {};
+  daily.forEach(d => {
+    const k = d._date.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    if (!byMonth[k]) byMonth[k] = {total:0,active:0,label:k,date:d._date};
+    byMonth[k].total  += d.total;
+    byMonth[k].active += d.activeMins;
+  });
+  const months = Object.values(byMonth).sort((a,b)=>a.date-b.date);
+  const maxMo = Math.max(...months.map(m=>m.total),1);
+  const now = new Date();
+  const thisMoKey = now.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+
+  // Top 5
+  const top5 = [...daily].filter(d=>d.total>0).sort((a,b)=>b.total-a.total).slice(0,5);
+
+  // By type
+  const byType = {};
+  runs.forEach(r => {
+    const t = r.type||'Other';
+    if (!byType[t]) byType[t]={total:0,count:0,active:0};
+    byType[t].total  += r.total;
+    byType[t].count  += 1;
+    byType[t].active += r.activeMins;
+  });
+  const typeList = Object.entries(byType).sort((a,b)=>b[1].total-a[1].total);
+  const maxType = Math.max(...typeList.map(t=>t[1].total),1);
+
+  // By platform (Spark vs Instacart vs anything else logged)
+  const byPlatform = {};
+  runs.forEach(r => {
+    const p = r.platform||'Spark';
+    if (!byPlatform[p]) byPlatform[p]={total:0,count:0,active:0,stops:0};
+    byPlatform[p].total  += r.total;
+    byPlatform[p].count  += 1;
+    byPlatform[p].active += r.activeMins;
+    byPlatform[p].stops  += (+r.stops||0);
+  });
+  const platformList = Object.entries(byPlatform).sort((a,b)=>b[1].total-a[1].total);
+
+  // Modified-trip impact (Spark cutting stops/pay after batch acceptance)
+  const modRuns    = runs.filter(r=>r.modified==1);
+  const modCount    = modRuns.length;
+  const modLostTotal = modRuns.reduce((s,r)=>s+(+r.lostEarn||0),0);
+  const modStopsLost  = modRuns.reduce((s,r)=>s+Math.max(0,(+r.origStops||0)-(+r.stops||0)),0);
+  const modPct        = runs.length>0 ? Math.round((modCount/runs.length)*100) : 0;
+  const batchRuns      = runs.filter(r=>(r.type||'').toLowerCase()==='batch');
+  const batchActive     = batchRuns.reduce((s,r)=>s+r.activeMins,0);
+  const batchTotal      = batchRuns.reduce((s,r)=>s+r.total,0);
+  const batchRate       = batchActive>0 ? batchTotal/(batchActive/60) : 0;
+  const nonBatchRuns    = runs.filter(r=>(r.type||'').toLowerCase()!=='batch');
+  const nonBatchActive  = nonBatchRuns.reduce((s,r)=>s+r.activeMins,0);
+  const nonBatchTotal   = nonBatchRuns.reduce((s,r)=>s+r.total,0);
+  const nonBatchRate    = nonBatchActive>0 ? nonBatchTotal/(nonBatchActive/60) : 0;
+
+  document.getElementById('dashboard-content').innerHTML = `
+    <div class="hero">
+      <div class="hcard or"><div class="hcard-label">Total Earned</div><div class="hcard-val">${fmt$(totalEarned)}</div><div class="hcard-sub">${daysWorked} days worked</div></div>
+      <div class="hcard gr"><div class="hcard-label">Avg Hourly Rate</div><div class="hcard-val">${avgRate>0?fmt$(avgRate):'—'}</div><div class="hcard-sub">${fmtMins(totalActive)} active</div></div>
+      <div class="hcard bl"><div class="hcard-label">Avg Per Day</div><div class="hcard-val">${fmt$(avgPerDay)}</div><div class="hcard-sub">${totalRuns} total runs</div></div>
+      <div class="hcard pu"><div class="hcard-label">Avg Idle / Day</div><div class="hcard-val">${avgIdlePerDay>0?avgIdlePerDay+' min':'—'}</div><div class="hcard-sub">${fmtMins(totalIdle)} total idle</div></div>
+    </div>
+
+    <div class="month-strip">
+      ${months.map(m=>`
+        <div class="mcard ${m.label===thisMoKey?'cur':''}">
+          <div class="mcard-name">${m.label}</div>
+          <div class="mcard-val">${fmt$(m.total)}</div>
+          <div class="mcard-sub">${fmtMins(m.active)}</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Earnings by Month</div>
+        <div class="bar-chart">
+          ${months.slice(-9).map(m=>`
+            <div class="bar-row">
+              <div class="bar-lbl">${m.label.split(' ')[0]}</div>
+              <div class="bar-track"><div class="bar-fill or" style="width:${Math.round((m.total/maxMo)*100)}%"></div></div>
+              <div class="bar-val">${fmt$(m.total)}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Top 5 Days</div>
+        <div class="best-list">
+          ${top5.map(d=>`
+            <div class="best-row">
+              <div><div class="best-date">${fmtShort(d._date)}</div><div class="best-dow">${fmtDow(d._date)}</div></div>
+              <div><div class="best-amt">${fmt$(d.total)}</div><div class="best-rate">${d.activeMins>0?fmt$(d.total/(d.activeMins/60))+'/hr':'—'}</div></div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <div class="card-title">By Run Type</div>
+        <div class="bar-chart" style="margin-bottom:14px">
+          ${typeList.map(([t,d])=>`
+            <div class="bar-row">
+              <div class="bar-lbl">${t}</div>
+              <div class="bar-track"><div class="bar-fill gr" style="width:${Math.round((d.total/maxType)*100)}%"></div></div>
+              <div class="bar-val">${fmt$(d.total)}</div>
+            </div>`).join('')}
+        </div>
+        <table class="tbl">
+          <thead><tr><th>Type</th><th class="r">Runs</th><th class="r">Total</th><th class="r">Avg/Run</th><th class="r">$/Hr</th></tr></thead>
+          <tbody>
+            ${typeList.map(([t,d])=>`
+              <tr>
+                <td class="lbl"><span class="pill ${pillClass(t)}">${t}</span></td>
+                <td class="r mu">${d.count}</td>
+                <td class="r">${fmt$(d.total)}</td>
+                <td class="r">${fmt$(d.total/d.count)}</td>
+                <td class="r" style="color:var(--green)">${d.active>0?fmt$(d.total/(d.active/60)):'—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Summary</div>
+        <div class="srow"><span class="srow-lbl">Total earned</span><span class="srow-val or">${fmt$(totalEarned)}</span></div>
+        <div class="srow"><span class="srow-lbl">Tips</span><span class="srow-val">${fmt$(daily.reduce((s,d)=>s+d.tips,0))}</span></div>
+        <div class="srow"><span class="srow-lbl">Incentives</span><span class="srow-val">${fmt$(daily.reduce((s,d)=>s+d.incentive,0))}</span></div>
+        <div class="srow"><span class="srow-lbl">Active hours</span><span class="srow-val gr">${fmtMins(totalActive)}</span></div>
+        <div class="srow"><span class="srow-lbl">Idle time</span><span class="srow-val pu">${fmtMins(totalIdle)}</span></div>
+        <div class="srow"><span class="srow-lbl">Total runs</span><span class="srow-val">${totalRuns}</span></div>
+        <div class="srow"><span class="srow-lbl">Avg per day</span><span class="srow-val">${fmt$(avgPerDay)}</span></div>
+        <div class="srow"><span class="srow-lbl">Best day</span><span class="srow-val or">${bestDay?fmt$(bestDay.total):'—'}</span></div>
+        <div class="srow"><span class="srow-lbl">Best day date</span><span class="srow-val">${bestDay?fmtShort(bestDay._date):'—'}</span></div>
+      </div>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <div class="card-title">By Platform</div>
+        <table class="tbl">
+          <thead><tr><th>Platform</th><th class="r">Runs</th><th class="r">Stops</th><th class="r">Total</th><th class="r">$/Hr</th></tr></thead>
+          <tbody>
+            ${platformList.map(([p,d])=>`
+              <tr>
+                <td class="lbl"><span class="pill ${p.toLowerCase()==='instacart'?'instacart':'spark'}">${p}</span></td>
+                <td class="r mu">${d.count}</td>
+                <td class="r mu">${d.stops||'—'}</td>
+                <td class="r">${fmt$(d.total)}</td>
+                <td class="r" style="color:var(--green)">${d.active>0?fmt$(d.total/(d.active/60)):'—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Modified Trips Impact <span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">(Spark cut stops/pay after acceptance)</span></div>
+        <div class="srow"><span class="srow-lbl">Runs modified</span><span class="srow-val">${modCount} <span style="color:var(--dim);font-size:10px">(${modPct}% of runs)</span></span></div>
+        <div class="srow"><span class="srow-lbl">Total earnings lost</span><span class="srow-val" style="color:#b83232">-${fmt$(modLostTotal)}</span></div>
+        <div class="srow"><span class="srow-lbl">Total stops lost</span><span class="srow-val">${modStopsLost}</span></div>
+        <div class="srow"><span class="srow-lbl">Avg lost per modified run</span><span class="srow-val" style="color:#b83232">${modCount>0?'-'+fmt$(modLostTotal/modCount):'—'}</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0"></div>
+        <div class="srow"><span class="srow-lbl">Batch $/Hr</span><span class="srow-val" style="color:var(--purple)">${batchRate>0?fmt$(batchRate):'—'}</span></div>
+        <div class="srow"><span class="srow-lbl">Non-Batch $/Hr</span><span class="srow-val">${nonBatchRate>0?fmt$(nonBatchRate):'—'}</span></div>
+      </div>
+    </div>`;
+}
+
+// ── Runs table render ─────────────────────────────────
+function renderRunsTable() {
+  const sorted = [...allRuns].sort((a,b)=>b._date-a._date);
+  document.getElementById('runs-content').innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>Date</th><th>Day</th><th>Platform</th><th>Type</th><th class="r">Stops</th>
+        <th>Start</th><th>Back</th><th class="r">Active</th><th class="r">Idle</th>
+        <th class="r">Est Mi</th><th class="r">Tot Mi</th>
+        <th class="r">Earnings</th><th class="r">Tips</th><th class="r">Total</th><th class="r">$/Hr</th><th class="r">Mod?</th>
+      </tr></thead>
+      <tbody>
+        ${sorted.map(r=>`
+          <tr>
+            <td class="lbl">${fmtShort(r._date)}</td>
+            <td class="mu">${fmtDowS(r._date)}</td>
+            <td><span class="pill ${(r.platform||'Spark').toLowerCase()==='instacart'?'instacart':'spark'}">${r.platform||'Spark'}</span></td>
+            <td><span class="pill ${pillClass(r.type)}">${r.type||'—'}</span></td>
+            <td class="r mu">${r.stops||'—'}</td>
+            <td class="mu">${r.start||'—'}</td>
+            <td class="mu">${r.back||'—'}</td>
+            <td class="r">${r.activeMins>0?fmtMins(r.activeMins):'—'}</td>
+            <td class="r" style="color:var(--purple)">${r.idleMins>0?fmtMins(r.idleMins):'—'}</td>
+            <td class="r mu">${r.estMiles>0?r.estMiles+'mi':'—'}</td>
+            <td class="r mu">${r.totalMiles>0?r.totalMiles+'mi':'—'}</td>
+            <td class="r">${fmt$(r.earnings)}</td>
+            <td class="r mu">${r.tips>0?fmt$(r.tips):'—'}</td>
+            <td class="r" style="font-weight:600">${fmt$(r.total)}</td>
+            <td class="r" style="color:var(--green)">${r.rate>0?fmt$(r.rate):r.activeMins>0?fmt$(r.total/(r.activeMins/60)):'—'}</td>
+            <td class="r">${r.modified==1?`<span style="color:#b83232;font-size:9px;font-weight:700;">-$${r.lostEarn||'?'}</span>`:'—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── Log form ──────────────────────────────────────────
+function addBatch() {
+  batchCount++;
+  const n = batchCount;
+  const c = document.getElementById('batches-container');
+  const el = document.createElement('div');
+  el.className = 'batch-block';
+  el.id = `batch-${n}`;
+  el.innerHTML = `
+    <div class="batch-hdr">
+      <span class="batch-hdr-label">Batch ${n}</span>
+      ${n>1?`<button class="batch-del" onclick="removeBatch(${n})">×</button>`:''}
+    </div>
+    <div class="batch-grid">
+      <div class="time-field"><label>Start Shopping</label><input type="time" id="b${n}-start" oninput="updatePreview();updateIdleRows();saveDraft()"></div>
+      <div class="time-field"><label>Leave Store</label><input type="time" id="b${n}-leave" oninput="updatePreview();saveDraft()"></div>
+      <div class="time-field"><label>Done Delivering</label><input type="time" id="b${n}-done" oninput="updatePreview();saveDraft()"></div>
+      <div class="time-field"><label>Back at Store</label><input type="time" id="b${n}-back" oninput="updatePreview();updateIdleRows();saveDraft()"></div>
+    </div>`;
+  c.appendChild(el);
+}
+
+function removeBatch(n) {
+  const el = document.getElementById(`batch-${n}`);
+  if (el) el.remove();
+  updateIdleRows(); updatePreview();
+}
+
+function updateIdleRows() {
+  document.querySelectorAll('.idle-row').forEach(r=>r.remove());
+  const blocks = [...document.querySelectorAll('.batch-block')];
+  for (let i=0; i<blocks.length-1; i++) {
+    const id1 = blocks[i].id.replace('batch-','');
+    const id2 = blocks[i+1].id.replace('batch-','');
+    const back  = parseTime(document.getElementById(`b${id1}-back`)?.value);
+    const start = parseTime(document.getElementById(`b${id2}-start`)?.value);
+    if (back!==null && start!==null && start>back) {
+      const idle = start-back;
+      const row = document.createElement('div');
+      row.className='idle-row';
+      row.innerHTML=`<span class="idle-lbl">⏸ Idle between Batch ${i+1} → ${i+2}</span><span class="idle-val">${idle} min${idle>40?' <span style="color:var(--dim);font-size:8px">(break — not counted)</span>':''}</span>`;
+      blocks[i+1].insertAdjacentElement('beforebegin',row);
+    }
+  }
+}
+
+function getBatches() {
+  const batches = [];
+  document.querySelectorAll('.batch-block').forEach(b => {
+    const id = b.id.replace('batch-','');
+    batches.push({
+      start: document.getElementById(`b${id}-start`)?.value||null,
+      leave: document.getElementById(`b${id}-leave`)?.value||null,
+      done:  document.getElementById(`b${id}-done`)?.value||null,
+      back:  document.getElementById(`b${id}-back`)?.value||null,
+    });
+  });
+  return batches;
+}
+
+function calcActive(batches) {
+  let mins=0;
+  batches.forEach(b => {
+    const s=parseTime(b.start), e=parseTime(b.back||b.done);
+    if (s!==null && e!==null && e>s) mins+=e-s;
+  });
+  return mins>0?mins:null;
+}
+
+function calcIdle(batches) {
+  let idle=0;
+  for (let i=0; i<batches.length-1; i++) {
+    const back  = parseTime(batches[i].back);
+    const start = parseTime(batches[i+1].start);
+    if (back!==null && start!==null && start>back) {
+      const gap = start-back;
+      if (gap<=40) idle+=gap;
+    }
+  }
+  return idle>0?idle:0;
+}
+
+function updatePreview() {
+  const earn   = parseFloat(document.getElementById('l-earn')?.value)||0;
+  const tips   = parseFloat(document.getElementById('l-tips')?.value)||0;
+  const incent = parseFloat(document.getElementById('l-incent')?.value)||0;
+  const total  = earn+tips+incent;
+  const hrs    = calcActive(getBatches());
+  const preview = document.getElementById('rate-preview');
+  const val     = document.getElementById('rate-val');
+  if (total>0 && hrs) {
+    preview.classList.add('show');
+    val.textContent = '$'+(total/(hrs/60)).toFixed(2)+'/hr';
+  } else if (total>0) {
+    preview.classList.add('show');
+    val.textContent = '$'+total.toFixed(2)+' · add times for rate';
+  } else {
+    preview.classList.remove('show');
+  }
+}
+
+async function submitRun() {
+  const date   = document.getElementById('l-date').value;
+  const earn   = parseFloat(document.getElementById('l-earn').value)||0;
+  if (!date) { setStatus('Please enter a date.','err'); return; }
+  if (!earn)  { setStatus('Please enter earnings.','err'); return; }
+
+  const batches    = getBatches().filter(b=>b.start);
+  const active     = calcActive(batches)||0;
+  const idle       = calcIdle(batches);
+  const tips       = parseFloat(document.getElementById('l-tips').value)||0;
+  const incent     = parseFloat(document.getElementById('l-incent').value)||0;
+  const total      = earn+tips+incent;
+  const rate       = active>0 ? parseFloat((total/(active/60)).toFixed(2)) : '';
+  const firstBatch = batches[0]||{};
+  const lastBatch  = batches[batches.length-1]||{};
+
+  // Prefix times with apostrophe to force plain text in Sheets
+  const forceText = t => t ? "'" + t : '';
+
+  const estMiles   = parseFloat(document.getElementById('l-est-miles').value)||0;
+  const totalMiles = parseFloat(document.getElementById('l-total-miles').value)||0;
+  const modified   = isModified ? 1 : 0;
+  const origEarn   = isModified ? (parseFloat(document.getElementById('l-orig-earn').value)||0) : 0;
+  const origStops  = isModified ? (parseInt(document.getElementById('l-orig-stops').value)||0) : 0;
+  const lostEarn   = isModified && origEarn > 0 ? Math.max(0, origEarn - total) : 0;
+
+  const payload = {
+    date,
+    platform: document.getElementById('l-platform').value,
+    type:   document.getElementById('l-type').value,
+    stops:  parseInt(document.getElementById('l-stops').value)||0,
+    start:  forceText(firstBatch.start||''),
+    leave:  forceText(firstBatch.leave||''),
+    done:   forceText(lastBatch.done||''),
+    back:   forceText(lastBatch.back||''),
+    activeMins: active, idleMins: idle,
+    earnings: earn, tips, incentive: incent, total, rate,
+    estMiles, totalMiles,
+    modified, origEarn, origStops, lostEarn,
+  };
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  setStatus('Sending to Google Sheets...','');
+
+  try {
+    const res = await fetch('/.netlify/functions/log-run', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error('Server error: ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    setStatus('✓ Saved to Google Sheets!','ok');
+    clearDraft();
+    resetForm();
+  } catch(e) {
+    setStatus('✗ Failed: ' + e.message + ' — run NOT saved.','err');
+  } finally {
+    btn.textContent = 'Log Run to Google Sheets';
+    btn.disabled = false;
+  }
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('submit-status');
+  el.textContent = msg; el.className = 'submit-status'+(cls?' '+cls:'');
+}
+
+function resetForm() {
+  ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-orig-earn','l-orig-stops','l-mod-diff'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  // Reset modified toggle
+  isModified = false;
+  document.getElementById('mod-toggle').style.background = 'var(--border)';
+  document.getElementById('mod-thumb').style.left = '2px';
+  document.getElementById('modified-fields').style.display = 'none';
+  document.getElementById('l-platform').value = 'Spark';
+  // Use local date not UTC to avoid timezone off-by-one
+const _now = new Date();
+const _localDate = _now.getFullYear() + '-' +
+  String(_now.getMonth()+1).padStart(2,'0') + '-' +
+  String(_now.getDate()).padStart(2,'0');
+document.getElementById('l-date').value = _localDate;
+  document.getElementById('batches-container').innerHTML='';
+  batchCount=0; addBatch();
+  document.getElementById('rate-preview').classList.remove('show');
+}
+
+// ── Nav ───────────────────────────────────────────────
+function showPage(page, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  btn.classList.add('active');
+  document.getElementById('filter-bar').style.display = page==='dashboard'?'flex':'none';
+}
+
+function setFilter(k, btn) {
+  activeFilter=k;
+  document.querySelectorAll('.filt').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDashboard();
+}
+
+// ── Draft save ───────────────────────────────────────
+// ── Miles calculator ─────────────────────────────────
+function updateMiles() {
+  const est   = parseFloat(document.getElementById('l-est-miles').value) || 0;
+  const stops = parseInt(document.getElementById('l-stops').value) || 0;
+  const noteEl  = document.getElementById('l-miles-note');
+  const totalEl = document.getElementById('l-total-miles');
+  if (!est) { totalEl.value = ''; noteEl.value = '—'; return; }
+
+  let mult, label;
+  if (stops <= 1)      { mult = 2.0;  label = '×2.0  (1 stop — full return)'; }
+  else if (stops <= 4) { mult = 1.8;  label = '×1.8  (2–4 stops)'; }
+  else                 { mult = 1.6;  label = '×1.6  (5+ stops)'; }
+
+  const total = Math.round(est * mult * 10) / 10;
+  totalEl.value = total;
+  noteEl.value  = label;
+}
+
+// ── Trip Modified toggle ──────────────────────────────
+let isModified = false;
+function toggleModified() {
+  isModified = !isModified;
+  document.getElementById('mod-toggle').style.background = isModified ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('mod-thumb').style.left = isModified ? '16px' : '2px';
+  document.getElementById('modified-fields').style.display = isModified ? 'block' : 'none';
+  saveDraft();
+}
+
+function updateModDiff() {
+  const orig  = parseFloat(document.getElementById('l-orig-earn').value) || 0;
+  const earn  = parseFloat(document.getElementById('l-earn').value) || 0;
+  const tips  = parseFloat(document.getElementById('l-tips').value) || 0;
+  const incent= parseFloat(document.getElementById('l-incent').value) || 0;
+  const final = earn + tips + incent;
+  const diff  = orig > 0 && final > 0 ? Math.round((orig - final) * 100) / 100 : null;
+  const el    = document.getElementById('l-mod-diff');
+  if (diff !== null && diff > 0) { el.value = diff.toFixed(2); }
+  else { el.value = ''; }
+  saveDraft();
+}
+
+function saveDraft() {
+  try {
+    const batches = [];
+    document.querySelectorAll('.batch-block').forEach(b => {
+      const id = b.id.replace('batch-','');
+      batches.push({
+        start: document.getElementById(`b${id}-start`)?.value||'',
+        leave: document.getElementById(`b${id}-leave`)?.value||'',
+        done:  document.getElementById(`b${id}-done`)?.value||'',
+        back:  document.getElementById(`b${id}-back`)?.value||'',
+      });
+    });
+    localStorage.setItem('spark_draft', JSON.stringify({
+      date:     document.getElementById('l-date').value,
+      platform: document.getElementById('l-platform').value,
+      type:     document.getElementById('l-type').value,
+      stops:    document.getElementById('l-stops').value,
+      earn:     document.getElementById('l-earn').value,
+      tips:     document.getElementById('l-tips').value,
+      incent:   document.getElementById('l-incent').value,
+      estMiles: document.getElementById('l-est-miles').value,
+      modified: isModified,
+      origEarn: document.getElementById('l-orig-earn')?.value||'',
+      origStops:document.getElementById('l-orig-stops')?.value||'',
+      batches,  batchCount,
+    }));
+  } catch(e) {}
+}
+
+function restoreDraft() {
+  try {
+    const raw = localStorage.getItem('spark_draft');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    const hasContent = d.earn || d.batches?.some(b => b.start);
+    if (!hasContent) return;
+    if (d.date)   document.getElementById('l-date').value   = d.date;
+    if (d.platform) document.getElementById('l-platform').value = d.platform;
+    if (d.type)   document.getElementById('l-type').value   = d.type;
+    if (d.stops)  document.getElementById('l-stops').value  = d.stops;
+    if (d.earn)   document.getElementById('l-earn').value   = d.earn;
+    if (d.tips)   document.getElementById('l-tips').value   = d.tips;
+    if (d.incent) document.getElementById('l-incent').value = d.incent;
+    if (d.estMiles) { document.getElementById('l-est-miles').value = d.estMiles; updateMiles(); }
+    if (d.modified) {
+      isModified = false; toggleModified(); // toggles to true and shows fields
+      if (d.origEarn)  document.getElementById('l-orig-earn').value  = d.origEarn;
+      if (d.origStops) document.getElementById('l-orig-stops').value = d.origStops;
+      updateModDiff();
+    }
+    if (d.batches?.length) {
+      document.getElementById('batches-container').innerHTML = '';
+      batchCount = 0;
+      d.batches.forEach(b => {
+        addBatch();
+        const n = batchCount;
+        if (b.start) document.getElementById(`b${n}-start`).value = b.start;
+        if (b.leave) document.getElementById(`b${n}-leave`).value = b.leave;
+        if (b.done)  document.getElementById(`b${n}-done`).value  = b.done;
+        if (b.back)  document.getElementById(`b${n}-back`).value  = b.back;
+      });
+    }
+    updatePreview();
+  } catch(e) {}
+}
+
+function clearDraft() {
+  try { localStorage.removeItem('spark_draft'); } catch(e) {}
+}
+
+// ── Init ──────────────────────────────────────────────
+document.getElementById('l-date').value = new Date().toISOString().split('T')[0];
+addBatch();
+restoreDraft();
+loadData();
+</script>
+</body>
+</html>
