@@ -254,7 +254,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
       <div class="log-card">
         <div class="log-section">Session Info</div>
         <div class="field-row four">
-          <div class="field"><label>Date</label><input type="date" id="l-date" oninput="saveDraft()"></div>
+          <div class="field"><label>Date</label><input type="date" id="l-date" oninput="saveDraft();updateGapDisplay()"></div>
           <div class="field"><label>Platform</label>
             <select id="l-platform" onchange="saveDraft()">
               <option value="Spark">Spark</option>
@@ -290,6 +290,20 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
         <div class="log-section">Batch Times <span style="color:var(--dim);font-size:9px;text-transform:none;letter-spacing:0"> — for hourly rate & idle tracking</span></div>
         <div id="batches-container"></div>
         <button type="button" class="add-batch-btn" onclick="addBatch()">+ Add Batch</button>
+
+        <div class="log-section">Wait Time Before This Run</div>
+        <div id="gap-display" style="background:var(--card);border:1px solid var(--border);border-radius:7px;padding:10px 12px;font-size:11px;color:var(--muted);margin-bottom:8px;">No earlier run found today — nothing to classify.</div>
+        <div id="gap-classify" style="display:none;margin-top:2px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:7px;cursor:pointer;" onclick="toggleGapIdle()">
+            <div id="gap-toggle" style="width:32px;height:18px;border-radius:99px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0;">
+              <div id="gap-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+            </div>
+            <span style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;">Count this gap as idle / waiting on an order</span>
+          </div>
+          <div class="field-row solo" id="gap-minutes-row" style="display:none;margin-top:8px;">
+            <div class="field"><label>Idle Minutes (editable)</label><input type="number" id="l-gap-minutes" min="0" oninput="saveDraft()"></div>
+          </div>
+        </div>
 
         <div class="log-section">Earnings</div>
         <div class="field-row three">
@@ -436,6 +450,7 @@ function handleData(data) {
 
   renderDashboard();
   renderRunsTable();
+  updateGapDisplay();
 }
 
 // ── Dashboard render ──────────────────────────────────
@@ -699,10 +714,11 @@ function updateIdleRows() {
       const idle = start-back;
       const row = document.createElement('div');
       row.className='idle-row';
-      row.innerHTML=`<span class="idle-lbl">⏸ Idle between Batch ${i+1} → ${i+2}</span><span class="idle-val">${idle} min${idle>40?' <span style="color:var(--dim);font-size:8px">(break — not counted)</span>':''}</span>`;
+      row.innerHTML=`<span class="idle-lbl">⏸ Idle between Batch ${i+1} → ${i+2}</span><span class="idle-val">${idle} min</span>`;
       blocks[i+1].insertAdjacentElement('beforebegin',row);
     }
   }
+  updateGapDisplay();
 }
 
 function getBatches() {
@@ -734,11 +750,71 @@ function calcIdle(batches) {
     const back  = parseTime(batches[i].back);
     const start = parseTime(batches[i+1].start);
     if (back!==null && start!==null && start>back) {
-      const gap = start-back;
-      if (gap<=40) idle+=gap;
+      idle += (start-back);
     }
   }
   return idle>0?idle:0;
+}
+
+// ── Gap-since-previous-run idle tracking ───────────────
+let isGapIdle = false;
+let lastComputedGap = null;
+
+function sameLocalDate(dateInputVal, runDateStr) {
+  if (!dateInputVal || !runDateStr) return false;
+  const dparts = dateInputVal.split('-').map(Number);
+  if (dparts.length<3) return false;
+  const [y,m,d] = dparts;
+  const rparts = String(runDateStr).split('/');
+  if (rparts.length<3) return false;
+  const rm = parseInt(rparts[0],10), rd = parseInt(rparts[1],10), ry = parseInt(rparts[2],10);
+  return y===ry && m===rm && d===rd;
+}
+
+function getPreviousRunGap() {
+  const dateVal = document.getElementById('l-date')?.value;
+  const batches = getBatches();
+  const newStart = batches[0] ? parseTime(batches[0].start) : null;
+  if (!dateVal || newStart===null) return null;
+
+  let bestBack = -1;
+  (allRuns||[]).forEach(r => {
+    if (!sameLocalDate(dateVal, r.date)) return;
+    const back = parseTime(r.back);
+    if (back!==null && back<=newStart && back>bestBack) bestBack = back;
+  });
+  if (bestBack < 0) return null;
+  return Math.max(0, newStart - bestBack);
+}
+
+function updateGapDisplay() {
+  const gap = getPreviousRunGap();
+  lastComputedGap = gap;
+  const disp = document.getElementById('gap-display');
+  const classify = document.getElementById('gap-classify');
+  if (!disp || !classify) return;
+  if (gap===null) {
+    disp.textContent = 'No earlier run found today — nothing to classify.';
+    classify.style.display = 'none';
+    return;
+  }
+  disp.textContent = `Gap since your last logged run today: ${gap} min. Was this idle time waiting on an order, or did you step away / end that session?`;
+  classify.style.display = 'block';
+  if (isGapIdle) {
+    const el = document.getElementById('l-gap-minutes');
+    if (el && !el.value) el.value = gap;
+  }
+}
+
+function toggleGapIdle() {
+  isGapIdle = !isGapIdle;
+  document.getElementById('gap-toggle').style.background = isGapIdle ? 'var(--accent)' : 'var(--border)';
+  document.getElementById('gap-thumb').style.left = isGapIdle ? '16px' : '2px';
+  document.getElementById('gap-minutes-row').style.display = isGapIdle ? 'block' : 'none';
+  if (isGapIdle && lastComputedGap!==null) {
+    document.getElementById('l-gap-minutes').value = lastComputedGap;
+  }
+  saveDraft();
 }
 
 function updatePreview() {
@@ -768,7 +844,9 @@ async function submitRun() {
 
   const batches    = getBatches().filter(b=>b.start);
   const active     = calcActive(batches)||0;
-  const idle       = calcIdle(batches);
+  const legIdle    = calcIdle(batches);
+  const gapIdle    = isGapIdle ? (parseInt(document.getElementById('l-gap-minutes')?.value,10)||0) : 0;
+  const idle       = legIdle + gapIdle;
   const tips       = parseFloat(document.getElementById('l-tips').value)||0;
   const incent     = parseFloat(document.getElementById('l-incent').value)||0;
   const total      = earn+tips+incent;
@@ -817,6 +895,7 @@ async function submitRun() {
     if (data.error) throw new Error(data.error);
 
     setStatus('✓ Saved to Google Sheets!','ok');
+    try { allRuns.push({date, start: firstBatch.start||'', back: lastBatch.back||'', _date: parseDate(date)}); } catch(e2) { console.error('post-save bookkeeping failed:', e2); }
     clearDraft();
     resetForm();
   } catch(e) {
@@ -833,24 +912,44 @@ function setStatus(msg, cls) {
 }
 
 function resetForm() {
-  ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-orig-earn','l-orig-stops','l-mod-diff'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.value='';
+  const steps = [
+    () => ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-orig-earn','l-orig-stops','l-mod-diff','l-gap-minutes'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='';
+    }),
+    () => { const el=document.getElementById('l-type'); if(el) el.value='Shop'; },
+    () => { const el=document.getElementById('l-platform'); if(el) el.value='Spark'; },
+    () => {
+      isModified = false;
+      const t=document.getElementById('mod-toggle'), th=document.getElementById('mod-thumb'), f=document.getElementById('modified-fields');
+      if(t) t.style.background='var(--border)';
+      if(th) th.style.left='2px';
+      if(f) f.style.display='none';
+    },
+    () => {
+      isGapIdle = false;
+      const t=document.getElementById('gap-toggle'), th=document.getElementById('gap-thumb'), r=document.getElementById('gap-minutes-row');
+      if(t) t.style.background='var(--border)';
+      if(th) th.style.left='2px';
+      if(r) r.style.display='none';
+    },
+    () => {
+      // Use local date not UTC to avoid timezone off-by-one
+      const _now = new Date();
+      const _localDate = _now.getFullYear() + '-' +
+        String(_now.getMonth()+1).padStart(2,'0') + '-' +
+        String(_now.getDate()).padStart(2,'0');
+      const el=document.getElementById('l-date'); if(el) el.value=_localDate;
+    },
+    () => {
+      const c=document.getElementById('batches-container'); if(c) c.innerHTML='';
+      batchCount=0; addBatch();
+    },
+    () => { const el=document.getElementById('rate-preview'); if(el) el.classList.remove('show'); },
+    () => updateGapDisplay(),
+  ];
+  steps.forEach(step => {
+    try { step(); } catch(e) { console.error('resetForm step failed:', e); }
   });
-  // Reset modified toggle
-  isModified = false;
-  document.getElementById('mod-toggle').style.background = 'var(--border)';
-  document.getElementById('mod-thumb').style.left = '2px';
-  document.getElementById('modified-fields').style.display = 'none';
-  document.getElementById('l-platform').value = 'Spark';
-  // Use local date not UTC to avoid timezone off-by-one
-const _now = new Date();
-const _localDate = _now.getFullYear() + '-' +
-  String(_now.getMonth()+1).padStart(2,'0') + '-' +
-  String(_now.getDate()).padStart(2,'0');
-document.getElementById('l-date').value = _localDate;
-  document.getElementById('batches-container').innerHTML='';
-  batchCount=0; addBatch();
-  document.getElementById('rate-preview').classList.remove('show');
 }
 
 // ── Nav ───────────────────────────────────────────────
@@ -935,6 +1034,8 @@ function saveDraft() {
       modified: isModified,
       origEarn: document.getElementById('l-orig-earn')?.value||'',
       origStops:document.getElementById('l-orig-stops')?.value||'',
+      gapIdle: isGapIdle,
+      gapMinutes: document.getElementById('l-gap-minutes')?.value||'',
       batches,  batchCount,
     }));
   } catch(e) {}
@@ -973,6 +1074,11 @@ function restoreDraft() {
         if (b.back)  document.getElementById(`b${n}-back`).value  = b.back;
       });
     }
+    updateGapDisplay();
+    if (d.gapIdle) {
+      isGapIdle = false; toggleGapIdle();
+      if (d.gapMinutes) document.getElementById('l-gap-minutes').value = d.gapMinutes;
+    }
     updatePreview();
   } catch(e) {}
 }
@@ -985,6 +1091,7 @@ function clearDraft() {
 document.getElementById('l-date').value = new Date().toISOString().split('T')[0];
 addBatch();
 restoreDraft();
+updateGapDisplay();
 loadData();
 </script>
 </body>
