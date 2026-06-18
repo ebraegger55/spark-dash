@@ -134,6 +134,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
 .pill.shop   { background: var(--blue-light); color: var(--blue); }
 .pill.pickup { background: var(--green-light); color: var(--green); }
 .pill.batch  { background: var(--purple-light); color: var(--purple); }
+.pill.instacart { background: var(--accent-light); color: var(--accent); }
+.pill.spark  { background: var(--border); color: var(--muted); }
 
 /* ── LOG FORM ── */
 .log-page { max-width: 680px; }
@@ -251,8 +253,14 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
     <div class="log-page">
       <div class="log-card">
         <div class="log-section">Session Info</div>
-        <div class="field-row three">
-          <div class="field"><label>Date</label><input type="date" id="l-date"></div>
+        <div class="field-row four">
+          <div class="field"><label>Date</label><input type="date" id="l-date" oninput="saveDraft()"></div>
+          <div class="field"><label>Platform</label>
+            <select id="l-platform" onchange="saveDraft()">
+              <option value="Spark">Spark</option>
+              <option value="Instacart">Instacart</option>
+            </select>
+          </div>
           <div class="field"><label>Type</label>
             <select id="l-type">
               <option value="Shop">Shop</option>
@@ -409,6 +417,7 @@ function handleData(data) {
 
   allRuns = (data.runs||[]).map(r => ({...r,
     _date: parseDate(r.date),
+    platform: r.platform || 'Spark',
     earnings: +r.earnings||0, tips: +r.tips||0, incentive: +r.incentive||0,
     total: +r.total||0, activeMins: +r.activeMins||0, idleMins: +r.idleMins||0,
     rate: +r.rate||0,
@@ -477,6 +486,33 @@ function renderDashboard() {
   });
   const typeList = Object.entries(byType).sort((a,b)=>b[1].total-a[1].total);
   const maxType = Math.max(...typeList.map(t=>t[1].total),1);
+
+  // By platform (Spark vs Instacart vs anything else logged)
+  const byPlatform = {};
+  runs.forEach(r => {
+    const p = r.platform||'Spark';
+    if (!byPlatform[p]) byPlatform[p]={total:0,count:0,active:0,stops:0};
+    byPlatform[p].total  += r.total;
+    byPlatform[p].count  += 1;
+    byPlatform[p].active += r.activeMins;
+    byPlatform[p].stops  += (+r.stops||0);
+  });
+  const platformList = Object.entries(byPlatform).sort((a,b)=>b[1].total-a[1].total);
+
+  // Modified-trip impact (Spark cutting stops/pay after batch acceptance)
+  const modRuns    = runs.filter(r=>r.modified==1);
+  const modCount    = modRuns.length;
+  const modLostTotal = modRuns.reduce((s,r)=>s+(+r.lostEarn||0),0);
+  const modStopsLost  = modRuns.reduce((s,r)=>s+Math.max(0,(+r.origStops||0)-(+r.stops||0)),0);
+  const modPct        = runs.length>0 ? Math.round((modCount/runs.length)*100) : 0;
+  const batchRuns      = runs.filter(r=>(r.type||'').toLowerCase()==='batch');
+  const batchActive     = batchRuns.reduce((s,r)=>s+r.activeMins,0);
+  const batchTotal      = batchRuns.reduce((s,r)=>s+r.total,0);
+  const batchRate       = batchActive>0 ? batchTotal/(batchActive/60) : 0;
+  const nonBatchRuns    = runs.filter(r=>(r.type||'').toLowerCase()!=='batch');
+  const nonBatchActive  = nonBatchRuns.reduce((s,r)=>s+r.activeMins,0);
+  const nonBatchTotal   = nonBatchRuns.reduce((s,r)=>s+r.total,0);
+  const nonBatchRate    = nonBatchActive>0 ? nonBatchTotal/(nonBatchActive/60) : 0;
 
   document.getElementById('dashboard-content').innerHTML = `
     <div class="hero">
@@ -556,6 +592,35 @@ function renderDashboard() {
         <div class="srow"><span class="srow-lbl">Best day</span><span class="srow-val or">${bestDay?fmt$(bestDay.total):'—'}</span></div>
         <div class="srow"><span class="srow-lbl">Best day date</span><span class="srow-val">${bestDay?fmtShort(bestDay._date):'—'}</span></div>
       </div>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <div class="card-title">By Platform</div>
+        <table class="tbl">
+          <thead><tr><th>Platform</th><th class="r">Runs</th><th class="r">Stops</th><th class="r">Total</th><th class="r">$/Hr</th></tr></thead>
+          <tbody>
+            ${platformList.map(([p,d])=>`
+              <tr>
+                <td class="lbl"><span class="pill ${p.toLowerCase()==='instacart'?'instacart':'spark'}">${p}</span></td>
+                <td class="r mu">${d.count}</td>
+                <td class="r mu">${d.stops||'—'}</td>
+                <td class="r">${fmt$(d.total)}</td>
+                <td class="r" style="color:var(--green)">${d.active>0?fmt$(d.total/(d.active/60)):'—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Modified Trips Impact <span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">(Spark cut stops/pay after acceptance)</span></div>
+        <div class="srow"><span class="srow-lbl">Runs modified</span><span class="srow-val">${modCount} <span style="color:var(--dim);font-size:10px">(${modPct}% of runs)</span></span></div>
+        <div class="srow"><span class="srow-lbl">Total earnings lost</span><span class="srow-val" style="color:#b83232">-${fmt$(modLostTotal)}</span></div>
+        <div class="srow"><span class="srow-lbl">Total stops lost</span><span class="srow-val">${modStopsLost}</span></div>
+        <div class="srow"><span class="srow-lbl">Avg lost per modified run</span><span class="srow-val" style="color:#b83232">${modCount>0?'-'+fmt$(modLostTotal/modCount):'—'}</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0"></div>
+        <div class="srow"><span class="srow-lbl">Batch $/Hr</span><span class="srow-val" style="color:var(--purple)">${batchRate>0?fmt$(batchRate):'—'}</span></div>
+        <div class="srow"><span class="srow-lbl">Non-Batch $/Hr</span><span class="srow-val">${nonBatchRate>0?fmt$(nonBatchRate):'—'}</span></div>
+      </div>
     </div>`;
 }
 
@@ -565,7 +630,7 @@ function renderRunsTable() {
   document.getElementById('runs-content').innerHTML = `
     <table class="tbl">
       <thead><tr>
-        <th>Date</th><th>Day</th><th>Type</th><th class="r">Stops</th>
+        <th>Date</th><th>Day</th><th>Platform</th><th>Type</th><th class="r">Stops</th>
         <th>Start</th><th>Back</th><th class="r">Active</th><th class="r">Idle</th>
         <th class="r">Est Mi</th><th class="r">Tot Mi</th>
         <th class="r">Earnings</th><th class="r">Tips</th><th class="r">Total</th><th class="r">$/Hr</th><th class="r">Mod?</th>
@@ -575,6 +640,7 @@ function renderRunsTable() {
           <tr>
             <td class="lbl">${fmtShort(r._date)}</td>
             <td class="mu">${fmtDowS(r._date)}</td>
+            <td><span class="pill ${(r.platform||'Spark').toLowerCase()==='instacart'?'instacart':'spark'}">${r.platform||'Spark'}</span></td>
             <td><span class="pill ${pillClass(r.type)}">${r.type||'—'}</span></td>
             <td class="r mu">${r.stops||'—'}</td>
             <td class="mu">${r.start||'—'}</td>
@@ -722,6 +788,7 @@ async function submitRun() {
 
   const payload = {
     date,
+    platform: document.getElementById('l-platform').value,
     type:   document.getElementById('l-type').value,
     stops:  parseInt(document.getElementById('l-stops').value)||0,
     start:  forceText(firstBatch.start||''),
@@ -774,6 +841,7 @@ function resetForm() {
   document.getElementById('mod-toggle').style.background = 'var(--border)';
   document.getElementById('mod-thumb').style.left = '2px';
   document.getElementById('modified-fields').style.display = 'none';
+  document.getElementById('l-platform').value = 'Spark';
   // Use local date not UTC to avoid timezone off-by-one
 const _now = new Date();
 const _localDate = _now.getFullYear() + '-' +
@@ -857,6 +925,7 @@ function saveDraft() {
     });
     localStorage.setItem('spark_draft', JSON.stringify({
       date:     document.getElementById('l-date').value,
+      platform: document.getElementById('l-platform').value,
       type:     document.getElementById('l-type').value,
       stops:    document.getElementById('l-stops').value,
       earn:     document.getElementById('l-earn').value,
@@ -879,6 +948,7 @@ function restoreDraft() {
     const hasContent = d.earn || d.batches?.some(b => b.start);
     if (!hasContent) return;
     if (d.date)   document.getElementById('l-date').value   = d.date;
+    if (d.platform) document.getElementById('l-platform').value = d.platform;
     if (d.type)   document.getElementById('l-type').value   = d.type;
     if (d.stops)  document.getElementById('l-stops').value  = d.stops;
     if (d.earn)   document.getElementById('l-earn').value   = d.earn;
