@@ -134,7 +134,6 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
 .pill.shop   { background: var(--blue-light); color: var(--blue); }
 .pill.pickup { background: var(--green-light); color: var(--green); }
 .pill.batch  { background: var(--purple-light); color: var(--purple); }
-.pill.canceled { background: var(--border); color: var(--muted); }
 .pill.instacart { background: var(--accent-light); color: var(--accent); }
 .pill.spark  { background: var(--border); color: var(--muted); }
 
@@ -224,6 +223,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
 
 <!-- Nav -->
 <div class="nav">
+  <div class="nav-tab" onclick="showPage('today',this)">Today</div>
   <div class="nav-tab" onclick="showPage('dashboard',this)">Dashboard</div>
   <div class="nav-tab active" onclick="showPage('log',this)">+ Log Run</div>
   <div class="nav-tab" onclick="showPage('runs',this)">All Runs</div>
@@ -241,6 +241,13 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
 </div>
 
 <div class="main">
+
+  <!-- Today page -->
+  <div class="page" id="page-today">
+    <div id="today-content">
+      <div class="loading"><div class="spinner"></div><div class="loading-txt">Loading...</div></div>
+    </div>
+  </div>
 
   <!-- Dashboard page -->
   <div class="page" id="page-dashboard">
@@ -267,7 +274,6 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
               <option value="Shop">Shop</option>
               <option value="Pickup">Pickup</option>
               <option value="Batch">Batch</option>
-              <option value="Canceled">Canceled</option>
             </select>
           </div>
           <div class="field"><label>Stops</label><input type="number" id="l-stops" placeholder="0" min="0" oninput="updateMiles();saveDraft()"></div>
@@ -292,6 +298,22 @@ body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-seri
         <div class="log-section">Batch Times <span style="color:var(--dim);font-size:9px;text-transform:none;letter-spacing:0"> — for hourly rate & idle tracking</span></div>
         <div id="batches-container"></div>
         <button type="button" class="add-batch-btn" onclick="addBatch()">+ Add Batch</button>
+
+        <div class="log-section">Time <span style="color:var(--dim);font-size:9px;text-transform:none;letter-spacing:0"> — vs. Walmart's estimate (their estimate doesn't include the return trip)</span></div>
+        <div class="field-row three">
+          <div class="field">
+            <label>Spark Estimated Time (min)</label>
+            <input type="number" id="l-est-time" placeholder="0" min="0" oninput="updateTimeEst();saveDraft()">
+          </div>
+          <div class="field">
+            <label>Total Time (actual)</label>
+            <input type="number" id="l-total-time" placeholder="auto" readonly style="background:var(--accent-light);border-color:var(--accent-dim);color:var(--accent);">
+          </div>
+          <div class="field">
+            <label>Time Differential</label>
+            <input type="text" id="l-time-diff" placeholder="—" readonly style="color:var(--muted);">
+          </div>
+        </div>
 
         <div class="log-section">Wait Time Before This Run</div>
         <div id="gap-display" style="background:var(--card);border:1px solid var(--border);border-radius:7px;padding:10px 12px;font-size:11px;color:var(--muted);margin-bottom:8px;">No earlier run found today — nothing to classify.</div>
@@ -391,7 +413,6 @@ function pillClass(type) {
   const t = type.toLowerCase();
   if (t.includes('pickup')) return 'pickup';
   if (t.includes('batch')) return 'batch';
-  if (t.includes('cancel')) return 'canceled';
   return 'shop';
 }
 
@@ -439,6 +460,8 @@ function handleData(data) {
     total: +r.total||0, activeMins: +r.activeMins||0, idleMins: +r.idleMins||0,
     rate: +r.rate||0,
     estMiles: +r.estMiles||0, totalMiles: +r.totalMiles||0,
+    estTimeMins: +r.estTimeMins||0,
+    timeDiff: (r.timeDiff===''||r.timeDiff==null) ? null : +r.timeDiff,
     modified: +r.modified||0, origEarn: +r.origEarn||0, origStops: +r.origStops||0, lostEarn: +r.lostEarn||0,
   })).filter(r => r._date && !isNaN(r._date));
 
@@ -452,6 +475,7 @@ function handleData(data) {
     'Updated ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 
   renderDashboard();
+  renderToday();
   renderRunsTable();
   updateGapDisplay();
 }
@@ -642,6 +666,98 @@ function renderDashboard() {
     </div>`;
 }
 
+// ── Today render ───────────────────────────────────────
+function isToday(d) {
+  if (!d) return false;
+  const now = new Date();
+  return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+}
+
+function renderToday() {
+  const runs = allRuns.filter(r => isToday(r._date));
+  const el = document.getElementById('today-content');
+  if (!runs.length) {
+    el.innerHTML = '<div class="loading"><div class="loading-txt">No runs logged yet today.</div></div>';
+    return;
+  }
+
+  const totalEarned = runs.reduce((s,r)=>s+r.total,0);
+  const tips         = runs.reduce((s,r)=>s+r.tips,0);
+  const incentives   = runs.reduce((s,r)=>s+r.incentive,0);
+  const activeMins   = runs.reduce((s,r)=>s+r.activeMins,0);
+  const idleMins     = runs.reduce((s,r)=>s+r.idleMins,0);
+  const totalRuns    = runs.length;
+  const avgRate      = activeMins>0 ? totalEarned/(activeMins/60) : 0;
+
+  const byType = {};
+  runs.forEach(r => {
+    const t = r.type||'Other';
+    if (!byType[t]) byType[t]={total:0,count:0,active:0};
+    byType[t].total += r.total; byType[t].count += 1; byType[t].active += r.activeMins;
+  });
+  const typeList = Object.entries(byType).sort((a,b)=>b[1].total-a[1].total);
+
+  const byPlatform = {};
+  runs.forEach(r => {
+    const p = r.platform||'Spark';
+    if (!byPlatform[p]) byPlatform[p]={total:0,count:0,active:0,stops:0};
+    byPlatform[p].total += r.total; byPlatform[p].count += 1; byPlatform[p].active += r.activeMins; byPlatform[p].stops += (+r.stops||0);
+  });
+  const platformList = Object.entries(byPlatform).sort((a,b)=>b[1].total-a[1].total);
+
+  el.innerHTML = `
+    <div class="hero">
+      <div class="hcard or"><div class="hcard-label">Total Earned</div><div class="hcard-val">${fmt$(totalEarned)}</div><div class="hcard-sub">${totalRuns} runs today</div></div>
+      <div class="hcard gr"><div class="hcard-label">Avg Hourly Rate</div><div class="hcard-val">${avgRate>0?fmt$(avgRate):'—'}</div><div class="hcard-sub">${fmtMins(activeMins)} active</div></div>
+      <div class="hcard bl"><div class="hcard-label">Tips</div><div class="hcard-val">${fmt$(tips)}</div><div class="hcard-sub">Incentives ${fmt$(incentives)}</div></div>
+      <div class="hcard pu"><div class="hcard-label">Idle Time</div><div class="hcard-val">${fmtMins(idleMins)}</div><div class="hcard-sub">${totalRuns} total runs</div></div>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <div class="card-title">By Run Type — Today</div>
+        <table class="tbl">
+          <thead><tr><th>Type</th><th class="r">Runs</th><th class="r">Total</th><th class="r">$/Hr</th></tr></thead>
+          <tbody>
+            ${typeList.map(([t,d])=>`
+              <tr>
+                <td class="lbl"><span class="pill ${pillClass(t)}">${t}</span></td>
+                <td class="r mu">${d.count}</td>
+                <td class="r">${fmt$(d.total)}</td>
+                <td class="r" style="color:var(--green)">${d.active>0?fmt$(d.total/(d.active/60)):'—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Summary — Today</div>
+        <div class="srow"><span class="srow-lbl">Total earned</span><span class="srow-val or">${fmt$(totalEarned)}</span></div>
+        <div class="srow"><span class="srow-lbl">Tips</span><span class="srow-val">${fmt$(tips)}</span></div>
+        <div class="srow"><span class="srow-lbl">Incentives</span><span class="srow-val">${fmt$(incentives)}</span></div>
+        <div class="srow"><span class="srow-lbl">Active hours</span><span class="srow-val gr">${fmtMins(activeMins)}</span></div>
+        <div class="srow"><span class="srow-lbl">Idle time</span><span class="srow-val pu">${fmtMins(idleMins)}</span></div>
+        <div class="srow"><span class="srow-lbl">Total runs</span><span class="srow-val">${totalRuns}</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">By Platform — Today</div>
+      <table class="tbl">
+        <thead><tr><th>Platform</th><th class="r">Runs</th><th class="r">Stops</th><th class="r">Total</th><th class="r">$/Hr</th></tr></thead>
+        <tbody>
+          ${platformList.map(([p,d])=>`
+            <tr>
+              <td class="lbl"><span class="pill ${p.toLowerCase()==='instacart'?'instacart':'spark'}">${p}</span></td>
+              <td class="r mu">${d.count}</td>
+              <td class="r mu">${d.stops||'—'}</td>
+              <td class="r">${fmt$(d.total)}</td>
+              <td class="r" style="color:var(--green)">${d.active>0?fmt$(d.total/(d.active/60)):'—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 // ── Runs table render ─────────────────────────────────
 function renderRunsTable() {
   const sorted = [...allRuns].sort((a,b)=>b._date-a._date);
@@ -650,6 +766,7 @@ function renderRunsTable() {
       <thead><tr>
         <th>Date</th><th>Day</th><th>Platform</th><th>Type</th><th class="r">Stops</th>
         <th>Start</th><th>Back</th><th class="r">Active</th><th class="r">Idle</th>
+        <th class="r">Est Time</th><th class="r">Diff</th>
         <th class="r">Est Mi</th><th class="r">Tot Mi</th>
         <th class="r">Earnings</th><th class="r">Tips</th><th class="r">Total</th><th class="r">$/Hr</th><th class="r">Mod?</th>
       </tr></thead>
@@ -665,6 +782,8 @@ function renderRunsTable() {
             <td class="mu">${r.back||'—'}</td>
             <td class="r">${r.activeMins>0?fmtMins(r.activeMins):'—'}</td>
             <td class="r" style="color:var(--purple)">${r.idleMins>0?fmtMins(r.idleMins):'—'}</td>
+            <td class="r mu">${r.estTimeMins>0?fmtMins(r.estTimeMins):'—'}</td>
+            <td class="r" style="${r.timeDiff>0?'color:#b83232':r.timeDiff<0?'color:var(--green)':''}">${r.timeDiff!=null?(r.timeDiff>0?'+':'')+r.timeDiff+'m':'—'}</td>
             <td class="r mu">${r.estMiles>0?r.estMiles+'mi':'—'}</td>
             <td class="r mu">${r.totalMiles>0?r.totalMiles+'mi':'—'}</td>
             <td class="r">${fmt$(r.earnings)}</td>
@@ -837,6 +956,21 @@ function updatePreview() {
   } else {
     preview.classList.remove('show');
   }
+  updateTimeEst();
+}
+
+// ── Time estimate vs actual ────────────────────────────
+function updateTimeEst() {
+  const est     = parseFloat(document.getElementById('l-est-time')?.value) || 0;
+  const totalEl = document.getElementById('l-total-time');
+  const diffEl  = document.getElementById('l-time-diff');
+  if (!totalEl || !diffEl) return;
+  const active = calcActive(getBatches());
+  totalEl.value = active || '';
+  if (!active || !est) { diffEl.value = '—'; diffEl.style.color = 'var(--muted)'; return; }
+  const diff = active - est;
+  diffEl.value = (diff>0?'+':'') + diff + ' min' + (diff>0?' over est.':diff<0?' under est.':' on est.');
+  diffEl.style.color = diff>0 ? '#b83232' : diff<0 ? 'var(--green)' : 'var(--muted)';
 }
 
 async function submitRun() {
@@ -862,6 +996,7 @@ async function submitRun() {
 
   const estMiles   = parseFloat(document.getElementById('l-est-miles').value)||0;
   const totalMiles = parseFloat(document.getElementById('l-total-miles').value)||0;
+  const estTimeMins = parseFloat(document.getElementById('l-est-time').value)||0;
   const modified   = isModified ? 1 : 0;
   const origEarn   = isModified ? (parseFloat(document.getElementById('l-orig-earn').value)||0) : 0;
   const origStops  = isModified ? (parseInt(document.getElementById('l-orig-stops').value)||0) : 0;
@@ -878,7 +1013,7 @@ async function submitRun() {
     back:   forceText(lastBatch.back||''),
     activeMins: active, idleMins: idle,
     earnings: earn, tips, incentive: incent, total, rate,
-    estMiles, totalMiles,
+    estMiles, totalMiles, estTimeMins,
     modified, origEarn, origStops, lostEarn,
   };
 
@@ -916,7 +1051,7 @@ function setStatus(msg, cls) {
 
 function resetForm() {
   const steps = [
-    () => ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-orig-earn','l-orig-stops','l-mod-diff','l-gap-minutes'].forEach(id=>{
+    () => ['l-earn','l-tips','l-incent','l-stops','l-est-miles','l-total-miles','l-miles-note','l-est-time','l-total-time','l-time-diff','l-orig-earn','l-orig-stops','l-mod-diff','l-gap-minutes'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.value='';
     }),
     () => { const el=document.getElementById('l-type'); if(el) el.value='Shop'; },
@@ -1034,6 +1169,7 @@ function saveDraft() {
       tips:     document.getElementById('l-tips').value,
       incent:   document.getElementById('l-incent').value,
       estMiles: document.getElementById('l-est-miles').value,
+      estTime:  document.getElementById('l-est-time')?.value||'',
       modified: isModified,
       origEarn: document.getElementById('l-orig-earn')?.value||'',
       origStops:document.getElementById('l-orig-stops')?.value||'',
@@ -1059,6 +1195,7 @@ function restoreDraft() {
     if (d.tips)   document.getElementById('l-tips').value   = d.tips;
     if (d.incent) document.getElementById('l-incent').value = d.incent;
     if (d.estMiles) { document.getElementById('l-est-miles').value = d.estMiles; updateMiles(); }
+    if (d.estTime)  { document.getElementById('l-est-time').value = d.estTime; }
     if (d.modified) {
       isModified = false; toggleModified(); // toggles to true and shows fields
       if (d.origEarn)  document.getElementById('l-orig-earn').value  = d.origEarn;
